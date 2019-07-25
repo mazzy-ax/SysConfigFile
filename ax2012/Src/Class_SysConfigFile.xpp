@@ -1,0 +1,470 @@
+﻿//
+// https://github.com/mazzy-ax/SysConfigFile
+//
+// класс всегда выполняется на сервере!! см в AOT-параметры класса
+// класс сознательно НЕ работает с xml namespaces. Если потребность в namespase возникнет, то нужно рефакторить класс.
+//
+// класс и методы объявлены как final ради производительности. подумайте трижды, если нужно создать потомка этого класса.
+public final class SysConfigFile
+{
+    #File
+
+    #define.defaultConfigName('Axapta')
+    str             configName;         // имя файла (без расширения и без пути), в котором хранится конфиг.
+    str             lastUsedParamName;
+
+    // lazy - довычисляются по мере необходимости. поэтому не используйте напрямую, а только через соответствующие методы класса
+    str             defaultDirectory;   // по умолчанию %Appl%\Config
+    str             directory;          // каталог. если пустая строка, то используется defaultDirectory
+    str             owner;              // owner найденных в конфиге параметров (для использования с globalCache).
+    Filename        file;               // имя файла
+    UnknownNoYes    fileExists;
+
+    XmlElement      xmlRoot;
+
+    // возвращает _paramName, если _paramName не пустой
+    // возвращает последнее использованное наименование, если _paramName пустой
+    // запоминает наименование в lastUsedParamName
+    private final str applyLastName(str _paramName)
+    {
+        str paramName = strltrim(strrtrim(_paramName));
+
+        if( paramName )
+            lastUsedParamName = paramName;
+
+        if( !lastUsedParamName )
+            throw error(Error::wrongUseOfFunction(funcname()));
+
+        return lastUsedParamName;
+    }
+
+    // возвращает true, если параметр присутствует в конфигурационном файле.
+    public final boolean checkExists(str paramName)
+    {
+        container   cachedValues    = this.getAll(paramName);
+        boolean     ret             = connull() != cachedValues;
+
+        return ret;
+    }
+
+    // возвращает true, если параметр присутствует в конфигурационном файле и его значение не пусто.
+    public final boolean checkNotEmpty(str paramName)
+    {
+        str value = this.get(paramName);
+
+        return value != '';
+    }
+
+    // очищает все значения, запомненные в кэше
+    // следующий get прочитает config-файл заново
+    public final void dataFlush()
+    {
+        this.globalCache().clear(this.globalCacheOwner());
+        xmlRoot = null;
+    }
+
+    // возвращает серверный каталог, в котором находятся конфигурационные xml-файлы
+    public final str directory()
+    {
+        if (directory)
+            return directory;
+
+        directory = this.parmDefaultDirectory();
+
+        return directory;
+    }
+
+    // проверяет, что параметр присутствует в конфигурационном файле.
+    // возвращает ссылку на себя, если присутствует в конфигурационном файле. Иначе бросает исключение.
+    //
+    // ensure-методы можно добавлять перед get-методами, чтобы убедиться что условие выполнено
+    public final SysConfigFile ensureExists(str paramName)
+    {
+        if( this.checkExists(paramName) )
+            return this;
+
+        throw error(strfmt("Параметр %1 отсутствует в файле %2. Обратитесь к разработчикам.", lastUsedParamName, this.filePath()));
+    }
+
+    // проверяет, что конфигурационном файл существует и содержит правильно составленный xml.
+    // возвращает ссылку на себя, если конфиг существует и является валидным xml-текстом. Иначе бросает исключение.
+    //
+    // ensure-методы можно добавлять перед get-методами, чтобы убедиться что условие выполнено
+    public final SysConfigFile ensureFileExists()
+    {
+        if( this.xmlRoot() )
+            return this;
+
+        throw error(strfmt("Файл %1 не найден или содержит ошибки. Обратитесь к разработчикам", this.filePath()));
+    }
+
+    // проверяет, что параметр присутствует в конфигурационном файле и его значение не пусто.
+    // возвращает ссылку на себя, если условие выполнено. Иначе бросает исключение.
+    //
+    // ensure-методы можно добавлять перед get-методами, чтобы убедиться что условие выполнено
+    public final SysConfigFile ensureNotEmpty(str paramName)
+    {
+        if( this.checkNotEmpty(paramName) )
+            return this;
+
+        throw error(strfmt("Параметр %1 пустой или отсутствует в файле %2. Обратитесь к разработчикам.", lastUsedParamName, this.filePath()));
+    }
+
+    public final boolean fileExists()
+    {
+        if( fileExists == UnknownNoYes::Unknown )
+        {
+            new FileIOPermission(this.filePath(), 'r').assert();
+            fileExists =  WinAPIServer::fileExists(file, false) ? UnknownNoYes::Yes : UnknownNoYes::No;
+        }
+
+        if( fileExists == UnknownNoYes::Yes )
+            return true;
+
+        return false;
+    }
+
+    // возвращает полный путь к файлу с конфигурацией на сервере
+    public final FileName filePath()
+    {
+        if( !file )
+            file = strfmt("%1%2.config", this.directory(), this.name());
+
+        return file;
+    }
+
+    // возвращает первое найденное строковое значение параметра
+    // или пустую строку, если параметр отсутствует или класс не смог прочитать xml-файл
+    // paramName - может быть выражением xPath
+    // Если paramName пустой, то используется предыдущее значение paramName
+    public final str get(str paramName = '', str defaultValue = '')
+    {
+        container values = this.getAll(paramName);
+    ;
+        if( values != connull() )
+            return conpeek(values, 1);
+
+        return defaultValue;
+    }
+
+    // возвращает контейнер найденных строковых значений параметра
+    // или connull, если параметр отсутствует или класс не смог прочитать xml-файл
+    // paramName - может быть выражением xPath
+    // Если paramName пустой, то используется предыдущее значение paramName
+    //
+    // возвращает контейнер, чтобы уменьшить накладные расходы на передачу объекта между клиентом и сервером
+    public final container getAll(str _paramName = '')
+    {
+        str             paramName   = this.applyLastName(_paramName);
+        container       ret         = this.globalCache().find(this.globalCacheOwner(), [paramName]);
+        XmlNodeList     nodeList;
+        XmlNode         node;
+    ;
+        if( ret != connull() )
+            return ret;                                         // параметр был прочитан ранее
+
+        if( this.xmlRoot() )
+            nodeList = this.xmlRoot().selectNodes(paramName);
+
+        if( nodeList )
+        {
+            node = nodeList.nextNode();
+            while( node )
+            {
+                ret += strltrim(strrtrim(node.text()));
+                node = nodeList.nextNode();
+            }
+        }
+
+        this.globalCache().insert(this.globalCacheOwner(), [paramName], ret);   // сохраняем в кэше
+        return ret;
+    }
+
+    // возвращает true, если параметр содержится в config-файле и имеет true-значение (см. комментарий внутри)
+    // возвращает defaultValue, если параметр не содержится в config-файле (или имеет false-значение. см. комментарий внутри)
+    public final boolean getBoolean(str paramName = '', boolean defaultValue = false)
+    {
+        str value;
+
+        if( !this.checkExists(paramName) )
+            return defaultValue;
+
+        value = this.get(paramName);
+
+        return SysConfigFile::toBoolean(value, defaultValue);
+    }
+
+    // В Аксапте часто задаются настройки с приоритетом.
+    // например, если нужно получить профиль разноски, то Аксапта:
+    // сначала смотрит в профили разноски по товарам,
+    // затем, если не найдено, то в профили разноски по группам,
+    // затем, если не найдено, то в профили разноски по всем.
+    // причем в Аксапте последовательность поиска не зависит от порядка записей в таблице профилей.
+    //
+    // В xml-файлах, напротив, порядок элементов важен. Операторы xPath сохраняют порядок элементов из xml-файла.
+    // Это значит, каким бы ни было выражение xPath, первым мы получим элемент, который в xml-файле расположен ближе к началу файла.
+    // Конечно, вручную можно следить за порядком элементов в xml.
+    // Но при генерации xml скриптами порядок элементов соблюдать уже затруднительно.
+    //
+    // Данный метод принимает несколько xPath-выражений и последовательно делает запрос для каждого выражения.
+    // Данный метод возвращает первое найденное значение. Если ни одно выражение не нашло значений, то метод возвращает defaultValue
+    //
+    // Пример:
+    // config.getBy(['profile[@group="mazzy"]', 'profile[not(@group)]'])
+    //
+    // См. также методы testGetBy* в классе SysConfigFileTest
+    //
+    // Важно! paramNames - это контейнер строк.
+    // Если внутри контейнера есть элемент-не-строка и метод добрался до проверки этого элемента, то метод бросит исключение.
+    // Если внутри есть пустая строка, то она будет проинтерпретирована как "получить из кэша значение предыдущего выражения"
+    // На практике полезной может быть только первая пустая строка. Но и в середине они допустимы, если контейнер создается каким-либо алгоритмом.
+    public final str getBy(container paramNames = [''], str defaultValue = '')
+    {
+        int         len = conlen(paramNames);
+        int         i;
+        str         paramName;
+
+        for(i=1; i<=len; i++)
+        {
+            paramName = conpeek(paramNames, i);     // здесь возможно исключение, если контейнер содержит не-строку
+            if( this.checkExists(paramName) )       // результат каждого запроса кэшируется
+                return this.get(paramName);
+        }
+
+        return defaultValue;
+    }
+
+    // параметры инстанса храним в classFactory.GlobalObjectCache(). можно в infolog.GlobalObjectCache() или appl.GlobalObjectCache()
+    // GlobalObjectCache - вытесняющий кэш, Аксапта сама следит за размером кэша и удаляет старые элементы.
+    // Кроме того, Аксапта автоматически синхронизирует GlobalObjectCache между AOS в кластере
+    //
+    // если вам не нужно вытеснение или синхронизация, то модифицируйте код в трех методах и используйте appl.GlobalCache()
+    // см. https://github.com/mazzy-ax/SysConfigFile/tree/master/ax2009
+    private final SysGlobalObjectCache globalCache()
+    {
+        if (!classFactory)
+            return new SysGlobalObjectCache(); // запустили из appl.startup() при старте AOS, когда еще не инициализированы глобальные переменные
+
+        return classFactory.globalObjectCache();
+    }
+
+    // значение owner для globalCache
+    private final str globalCacheOwner()
+    {
+        // здесь хитрый момент:
+        // в owner входит не полное имя файла с путем и расширением, а только configName (имя)
+        // в результате ускоряется метод get, если значение уже есть в кэше (поскольку не нужно вычислять каталог)
+        if (!owner)
+            owner = strfmt("%1:%2", funcname(), this.name());
+
+        return owner;
+    }
+
+    public final str name()
+    {
+        return configName;
+    }
+
+    public final void new(str _configName = #defaultConfigName, str _directory = '')
+    {;
+        configName = _configName;
+        directory = _directory;
+    }
+
+    // возвращает каталог на сервере, в котором класс по-умолчанию будет искать конфигурационные xml-файлы
+    // по умолчанию возвращает %Appl%\Config
+    public final str parmDefaultDirectory(str _defaultDirectory = defaultDirectory)
+    {
+        defaultDirectory = _defaultDirectory;
+
+        if( !defaultDirectory )
+        {
+            defaultDirectory = xInfo::directory(DirectoryType::Appl)+@'Config\';
+        }
+
+        return defaultDirectory;
+    }
+
+    // читает xml-документ из файла.
+    // возвращает XML-документ или null, если документа не существует или при чтении файла получились ошибки разбора xml-файла
+    //
+    // внимание! метод добавляет ошибки разбора xml-файла в инфолог, но исключение не бросает
+    // предполагается, что программист получит значения через get() или ensure().get()
+    // и тем самым явно определит во внешнем коде обязательность того или иного параметра
+    // теоретически, конфигурационный файл может отсутствовать или содержать ошибки,
+    // а программист может задать разумное поведение и для этого случая, не вводя try/catch
+    //
+    // класс не хранит в явном виде прочитанный документ, класс хранит только root. см. метод this.xmlRoot()
+    // при необходимости, к документу можно обратиться this.xmlRoot().ownerDocument()
+    private final XmlDocument xmlDocument()
+    {
+        XmlDocument     xmlDocument;
+        XmlParseError   parseError;
+    ;
+        if(!this.fileExists())
+            return null;
+
+        new FileIOPermission(this.filePath(), 'r').assert();
+
+        xmlDocument = new XmlDocument();
+        if (!xmlDocument.load(file))
+        {
+            error(strfmt("@SYS97047", file));
+            parseError = xmlDocument.parseError();
+            if (parseError && parseError.errorCode() != 0)
+            {
+                error(strfmt("@SYS97048", parseError.toString()));
+            }
+            return null;
+        }
+
+        return xmlDocument;
+    }
+
+    // класс SysConfigFile не предоставляет прямой доступ к внутреннему представлению
+    // однако, если вы хотите дать внешним пользователям доступ к xml-объекту, то уберите private с этого метода
+    private final XmlElement xmlRoot()
+    {
+        XmlDocument    xmlDocument;
+    ;
+        if( xmlRoot == null )
+        {
+            xmlDocument = this.xmlDocument();
+
+            if( xmlDocument )
+                xmlRoot = xmlDocument.root();
+        }
+
+        return xmlRoot;
+    }
+
+    // возвращает контейнер найденных строковых значений параметра
+    // или connull, если параметр отсутствует или класс не смог прочитать xml-файл
+    // paramName - может быть выражением xPath
+    // Если paramName пустой, то используется предыдущее значение paramName
+    //
+    // используйте этот метод только для чтения одного параметра из config-файла
+    // как только нужно прочитать или проверить несколько параметров, создайте один раз переменную SysConfigFile и вызывайте методы инстанса
+    public static container allValues(str paramName, str configName = #defaultConfigName, str directory = '')
+    {
+        container ret = SysConfigFile::construct(configName, directory).getAll(paramName);
+
+        return ret;
+    }
+
+    // используйте этот метод только для проверки одного параметра из config-файла
+    // как только нужно прочитать или проверить несколько параметров, создайте один раз переменную SysConfigFile и вызывайте методы инстанса
+    public static void assertExists(str paramName, str configName = #defaultConfigName, str directory = '')
+    {;
+        SysConfigFile::construct(configName, directory).ensureExists(paramName);
+    }
+
+    // используйте этот метод только для проверки одного параметра из config-файла
+    // как только нужно прочитать или проверить несколько параметров, создайте один раз переменную SysConfigFile и вызывайте методы инстанса
+    public static void assertFileExists(str configName = #defaultConfigName, str directory = '')
+    {;
+        SysConfigFile::construct(configName, directory).ensureFileExists();
+    }
+
+    // используйте этот метод только для проверки одного параметра из config-файла
+    // как только нужно прочитать или проверить несколько параметров, создайте один раз переменную SysConfigFile и вызывайте методы инстанса
+    public static void assertNotEmpty(str paramName, str configName = #defaultConfigName, str directory = '')
+    {;
+        SysConfigFile::construct(configName, directory).ensureNotEmpty(paramName);
+    }
+
+    public static SysConfigFile construct(str configName = #defaultConfigName, str directory = '')
+    {
+        SysConfigFile ret = new SysConfigFile(configName, directory);
+
+        return ret;
+    }
+
+    // используйте этот метод только для проверки одного параметра из config-файла
+    // как только нужно прочитать или проверить несколько параметров, создайте один раз переменную SysConfigFile и вызывайте методы инстанса
+    public static boolean exists(str paramName, str configName = #defaultConfigName, str directory = '')
+    {
+        boolean ret = SysConfigFile::construct(configName, directory).checkExists(paramName);
+
+        return ret;
+    }
+
+    // возвращает false, если параметр не содержится в config-файле (или имеет false-значение. см. комментарий внутри)
+    // возвращает true, если параметр содержится в config-файле и имеет true-значение (см. комментарий внутри)
+    // возвращает defaultValue, если параметр содержится в config-файле и содержит прочий текст
+    public static boolean toBoolean(str value, boolean defaultValue = false)
+    {
+        // спорный момент: нужно ли трактовать пустое значение в существующем xml-элементе как true или как false?
+        // в мире XML элементы с пустым значением принято оформлять одним элементом с замыкающей косой чертой: <emptyValue />
+        // такие элементы трактуются как разрешение чего-нибудь, включение чего-нибудь или как наличие чего-нибудь.
+        // но в мире XML нет способа отличить разные формы записи элементов: <emptyValue /> и <emptyValue></emptyValue> - эквивалентны
+        // поэтому можно либо оба варианта трактовать как true, либо оба варианта как false.
+        // Предлагается трактовать как true. см. также "C.2. Empty Elements" https://www.w3.org/TR/xhtml1/#guidelines
+        //
+        if( value == '' )   // Закоментируйте эти две строки
+            return true;    // если хотите трактовать пустое значение как false
+
+        if( value == '1' )
+            return true;
+
+        value = strupr(value);
+        if( value == 'TRUE' || value == 'ON' )
+            return true;
+
+        // спорный момент: можно ли трактовать остальные значения как false? или обязательно требовать определенного текста?
+        //if( value == '0' || value == 'FALSE' || value == 'OFF' )
+        //    return false;
+
+        return defaultValue;
+    }
+
+    // возвращает первое найденное строковое значение параметра
+    // бросает исключение, если параметр отсутствует в config-файле или класс не смог прочитать xml-файл
+    // paramName - может быть выражением xPath. Если paramName пустой, то используется предыдущее значение paramName
+    //
+    // используйте этот метод только чтения одного параметра из config-файла
+    // как только нужно прочитать или проверить несколько параметров, создайте один раз переменную SysConfigFile и вызывайте методы инстанса
+    public static str value(str paramName, str configName = #defaultConfigName, str directory = '')
+    {
+        str ret = SysConfigFile::construct(configName, directory).ensureExists(paramName).get();
+
+        return ret;
+    }
+
+    // возвращает true или false. см. комментарий в методе getBoolean
+    //
+    // используйте этот метод только чтения одного параметра из config-файла
+    // как только нужно прочитать или проверить несколько параметров, создайте один раз переменную SysConfigFile и вызывайте методы инстанса
+    public static boolean valueBoolean(str paramName, str configName = #defaultConfigName, str directory = '')
+    {
+        boolean ret = SysConfigFile::construct(configName, directory).getBoolean(paramName);
+
+        return ret;
+    }
+
+    // Данный метод принимает несколько xPath-выражений и последовательно делает запрос для каждого выражения.
+    // Данный метод возвращает первое найденное значение. Если ни одно выражение не нашло значений, то метод возвращает defaultValue
+    // см. комментарий к методу getBy()
+    //
+    // используйте этот метод только чтения одного параметра из config-файла
+    // как только нужно прочитать или проверить несколько параметров, создайте один раз переменную SysConfigFile и вызывайте методы инстанса
+    public static str valueBy(container paramNames, str defaultValue = '', str configName = #defaultConfigName, str directory = '')
+    {
+        str ret = SysConfigFile::construct(configName, directory).getBy(paramNames, defaultValue);
+
+        return ret;
+    }
+
+
+    // возвращает первое найденное строковое значение параметра
+    // возвращает defaultValue, если параметр отсутствует в config-файле или класс не смог прочитать xml-файл
+    // paramName - может быть выражением xPath. Если paramName пустой, то используется предыдущее значение paramName
+    //
+    // используйте этот метод только чтения одного параметра из config-файла
+    public static str valueOrDefault(str paramName, str defaultValue = '', str configName = #defaultConfigName, str directory = '')
+    {
+        str ret = SysConfigFile::construct(configName, directory).get(paramName, defaultValue);
+
+        return ret;
+    }
+}
