@@ -1,36 +1,55 @@
 ﻿//
 // https://github.com/mazzy-ax/SysConfigFile
+// (с) 2019 mazzy, v2.0, MIT License
 //
 // класс всегда выполняется на сервере!! см в AOT-параметры класса
 public class SysConfigFileTest extends SysTestCase
 {
+    Set resourceNameSet;
     str tempPath;
 
     public void setUp()
     {
         super();
 
-        new FileIOPermission('','r').assert();
-        tempPath = strfmt(@'%1%2\Config\', WinAPIServer::getTempPath(), sessionid());
+        resourceNameSet = new Set(Types::String);
 
-        WinAPIServer::createDirectoryPath(tempPath);
+        new InteropPermission(InteropKind::ClrInterop).assert();
+
+        tempPath = System.IO.Path::GetTempPath();
+        tempPath = strfmt(@'%1%2\Config\', tempPath, sessionid());
+
+        System.IO.Directory::CreateDirectory(tempPath);
     }
 
     public void tearDown()
     {
+        SetEnumerator   se  = resourceNameSet.getEnumerator();
+        ResourceNode    resourceNode;
+        SysElementName  resourceName;
+
+        // удалить созданные во время тестов ресурсы
+        while( se.moveNext() )
+        {
+            resourceName = se.current();
+            resourceNode = SysResource::getResourceNode(resourceName);
+            if( resourceNode && strStartsWith(resourceNode.filename(), '.') )   // очищаем только те, что начинаются с точки
+                resourceNode.AOTdelete();                                       // остальные возможно не тестовые, а рабочие
+        }
+
+        // удалить временный каталог вместе со всеми config- и xsd-файлами
+        new InteropPermission(InteropKind::ClrInterop).assert();
+        System.IO.Directory::Delete(tempPath, true);
+
         super();
-        WinAPIServer::removeDirectory(tempPath);
     }
 
     void testAllValues()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName, tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test>Value1</test>
               <test>Value2</test>
@@ -42,15 +61,22 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals(['Value1','Value2','Value3','Value4'], SysConfigFile::allValues('test',configName,tempPath));
     }
 
+    void testAllValues_Blank()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), '');
+
+        this.assertEquals(connull(), SysConfigFile::allValues('test',configName,tempPath));
+    }
+
     void testAllValues_Empty()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test></test>
               <test></test>
@@ -65,12 +91,9 @@ public class SysConfigFileTest extends SysTestCase
     void testAllValues_NotExists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
             </root>
         ');
@@ -78,125 +101,251 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals(connull(), SysConfigFile::allValues('test',configName,tempPath));
     }
 
+    void testAllValues_Null()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        // config-файл отсутствует
+
+        this.assertEquals(connull(), SysConfigFile::allValues('test',configName,tempPath));
+    }
+
+    void testCheckExists_Blank()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), '');
+
+        this.assertFalse(config.checkExists('test'));
+    }
+
     void testCheckExists_Empty()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test></test>
             </root>
         ');
 
-        this.assertEquals(true, config.checkExists('test'));
+        this.assertTrue(config.checkExists('test'));
     }
 
     void testCheckExists_NotEmpty()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test>Value</test>
             </root>
         ');
 
-        this.assertEquals(true, config.checkExists('test'));
+        this.assertTrue(config.checkExists('test'));
     }
 
     void testCheckExists_NotExists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
+        config.clearGlobalCache(); // очистим значения в глобальном кэше
 
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
             </root>
         ');
 
-        this.assertEquals(false, config.checkExists('test'));
+        this.assertFalse(config.checkExists('test'));
     }
 
-    void testCheckNotEmpty_Empty()
+    void testCheckExists_Null()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
+        // config-файл отсутствует
 
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
-            <root>
-              <test></test>
-            </root>
-        ');
-
-        this.assertEquals(false, config.checkNotEmpty('test'));
+        this.assertFalse(config.checkExists('test'));
     }
 
-    void testCheckNotEmpty_NotEmpty()
+    void testCheckFileExists_Exists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test>Value</test>
             </root>
         ');
 
-        this.assertEquals(true, config.checkNotEmpty('test'));
+        this.assertTrue(config.checkFileExists());
+    }
+
+    void testCheckFileExists_NotExists()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.assertFalse(config.checkFileExists());
+    }
+
+    void testCheckNotEmpty_Blank()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), '');
+
+        this.assertFalse(config.checkNotEmpty('test'));
+    }
+
+    void testCheckNotEmpty_Empty()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+            <root>
+              <test></test>
+            </root>
+        ');
+
+        this.assertFalse(config.checkNotEmpty('test'));
+    }
+
+    void testCheckNotEmpty_NotEmpty()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+            <root>
+              <test>Value</test>
+            </root>
+        ');
+
+        this.assertTrue(config.checkNotEmpty('test'));
     }
 
     void testCheckNotEmpty_NotExists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
             </root>
         ');
 
-        this.assertEquals(false, config.checkNotEmpty('test'));
+        this.assertFalse(config.checkNotEmpty('test'));
+    }
+
+    void testCheckNotEmpty_Null()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        // config-файл отсутствует
+
+        this.assertFalse(config.checkNotEmpty('test'));
+    }
+
+    void testConstruct_Document()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = SysConfigFile::construct(configName, tempPath, '', @'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</id>
+                <name>Microsoft Dynamics AX</name>
+                <enabled>true</enabled>
+            </config>
+        ').clearGlobalCache();
+
+        this.assertFalse(config.checkFileExists());
+        this.assertTrue(config.checkFileValid());
+
+        this.parmExceptionExpected(false);
+        config.ensureFileValid();
+
+        this.assertEquals('PROD', config.get('id'));
+    }
+
+    void testConstruct_SchemaAndDocument()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = SysConfigFile::construct(configName,tempPath,@'<?xml version="1.0" encoding="utf-8"?>
+            <xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="config">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="id" type="xs:normalizedString" />
+                    <xs:element name="name" type="xs:normalizedString" />
+                    <xs:element name="enabled" type="xs:boolean" />
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
+        ',
+
+        @'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</id>
+                <name>Microsoft Dynamics AX</name>
+                <enabled>true</enabled>
+            </config>
+        ').clearGlobalCache();
+
+        this.assertFalse(config.checkFileExists());
+        this.assertTrue(config.checkFileValid());
+
+        this.parmExceptionExpected(false);
+        config.ensureFileValid();
+
+        this.assertEquals('PROD', config.get('id'));
+    }
+
+    void testCreate()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName, tempPath, 'schemaText', 'fileText').clearGlobalCache();
+        container       packedCon   = config.pack();
+        SysConfigFile   config2     = SysConfigFile::create(packedCon);
+
+        this.assertEquals(configName, config2.name());
+        this.assertEquals(tempPath, config2.directory());
+        this.assertEquals(config.file(), config2.file());
+        this.assertEquals(config.schema(), config2.schema());
+    }
+
+    void testCreate_containerInvalid()
+    {
+        container       packedCon   = connull();
+        SysConfigFile   config      = SysConfigFile::create(packedCon);
+
+        this.assertNull(config);
     }
 
     void testDirectory()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName,'testDir');
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.assertEquals('testDir', config.directory());
+        this.assertEquals(tempPath, config.directory());
     }
 
     void testDirectory_Empty()
     {
-        SysConfigFile   config  = new SysConfigFile();
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.assertEquals(tempPath, config.directory());
+        this.assertEquals(xInfo::directory(DirectoryType::Appl)+'Config\\', config.directory());
     }
 
     //
@@ -205,12 +354,9 @@ public class SysConfigFileTest extends SysTestCase
     void testExample()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <config>
                 <id>PROD</id>
                 <name>Microsoft Dynamics AX</name>
@@ -242,60 +388,112 @@ public class SysConfigFileTest extends SysTestCase
 
         this.assertEquals('Microsoft Dynamics AX', SysConfigFile::value('name', configName, tempPath));
 
-        this.parmExceptionExpected(true, strfmt("Параметр notFound отсутствует в файле %1. Обратитесь к разработчикам.", config.filePath()));
+        this.parmExceptionExpected(true, strfmt("Параметр notFound отсутствует в файле %1. Обратитесь к разработчикам.\r\n%2", config.filePath(), config.file()));
         this.assertEquals('', SysConfigFile::value('notFound', configName, tempPath));
     }
 
-    void testFileExists_Exists()
+    void testExample_ResourceXSD()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
-            <root>
-              <test>Value</test>
-            </root>
+        this.writeToResource(config.schemaResourceName(),@'<?xml version="1.0" encoding="utf-8"?>
+            <xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="config">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="id" type="xs:normalizedString" />
+                    <xs:element name="name" type="xs:normalizedString" />
+                    <xs:element name="reportTemplateFolder" type="xs:anyURI" />
+                    <xs:element name="sender" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:simpleContent>
+                          <xs:extension base="xs:normalizedString">
+                            <xs:attribute name="email" type="xs:normalizedString" use="optional" />
+                          </xs:extension>
+                        </xs:simpleContent>
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="AOS">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="batch" maxOccurs="unbounded">
+                            <xs:complexType>
+                              <xs:simpleContent>
+                                <xs:extension base="xs:normalizedString">
+                                  <xs:attribute name="serverId" type="xs:normalizedString" use="required" />
+                                </xs:extension>
+                              </xs:simpleContent>
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
         ');
 
-        this.assertEquals(true, config.fileExists());
-    }
+        this.writeToFile(config.filePath(), strfmt(@'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</id>
+                <name>Microsoft Dynamics AX</name>
+                <reportTemplateFolder>\\dax\template\</reportTemplateFolder>
 
-    void testFileExists_NotExists()
-    {
-        str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
-    ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
+                <sender>Axapta</sender>
+                <sender email="note">Notification server</sender>
+                <sender email="mail">Company name</sender>
 
-        this.assertEquals(false, config.fileExists());
+                <AOS>
+                    <batch serverId="01@AOS" />
+                    <batch serverId="01@RESERV">true</batch>
+                </AOS>
+            </config>
+        ', configName));
+
+        this.assertTrue(config.checkFileValid(),'checkFileValid');
+
+        this.parmExceptionExpected(false);
+        config.ensureFileValid();
+
+        this.assertEquals('PROD', config.get('id'));
+        this.assertEquals('', config.get('notFound'));
+
+        this.assertTrue(config.getBoolean('AOS/batch'));
+        this.assertFalse(config.getBoolean('notFound'));
+
+        this.assertEquals(['Axapta','Notification server','Company name'], config.getAll('sender'));
+        this.assertEquals(['01@AOS','01@RESERV'], config.getAll('AOS/batch/@serverId'));
+        this.assertEquals(connull(), config.getAll('notFound'));
+
+        this.assertEquals('Company name', config.getBy(['sender[@email="mail"]','sender[not(@email)]']));
+        this.assertEquals('Axapta', config.getBy(['sender[@email="other"]','sender[not(@email)]']));
+
+        this.assertEquals('Microsoft Dynamics AX', SysConfigFile::value('name', configName, tempPath));
+
+        this.parmExceptionExpected(true, strfmt("Параметр notFound отсутствует в файле %1. Обратитесь к разработчикам.\r\n%2", config.filePath(), config.file()));
+        this.assertEquals('', SysConfigFile::value('notFound', configName, tempPath));
     }
 
     void testFilePath()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName,@'testDir\');
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.assertEquals(strfmt(@'testDir\%1.config', configName), config.filePath());
+        this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
     }
 
     void testGet()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
-              <test>Value</test>
+              <test>
+                Value
+              </test>
             </root>
         ');
 
@@ -303,15 +501,26 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals('Value', config.get('test'), 'from Cache');
     }
 
+    void testGet_Blank()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), '');
+
+        this.assertEquals('Default', config.get('test', 'Default'));
+        this.assertEquals('Default', config.get('test', 'Default'), 'from Cache');
+
+        this.assertEquals('', config.get('test'));
+        this.assertEquals('', config.get('test'), 'from Cache');
+    }
+
     void testGet_Empty()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test></test>
             </root>
@@ -321,15 +530,44 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals('', config.get('test'), 'from Cache');
     }
 
+    void testGet_EmptyParamName()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+            <root>
+              <test>Value</test>
+            </root>
+        ');
+
+        this.assertEquals('', config.get());
+        this.assertEquals('', config.get(), 'from Cache');
+
+        this.assertEquals('', config.get(''));
+    }
+
+    void testGet_FileBroken()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+            <root>
+              <test></broken>
+            </root>
+        ');
+
+        this.parmExceptionExpected(true, "The 'test' start tag on line 3 does not match the end tag of 'broken'. Line 3, position 19.");
+        this.assertEquals('', config.get('test'));
+    }
+
     void testGet_NotExists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
             </root>
         ');
@@ -338,20 +576,69 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals('', config.get('test'), 'from Cache');
     }
 
+    void testGet_Null()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.assertEquals('Default', config.get('test', 'Default'));
+        this.assertEquals('Default', config.get('test', 'Default'), 'from Cache');
+
+        this.assertEquals('', config.get('test'));
+        this.assertEquals('', config.get('test'), 'from Cache');
+    }
+
+    void testGet_xmlns()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+            <root xmlns="https://github.com/mazzy-ax/SysConfigFile">
+              <test>
+                Value
+              </test>
+            </root>
+        ');
+
+        this.assertEquals('', config.get('test'));                  // not 'Value'!!!
+        this.assertEquals('', config.get('test'), 'from Cache');
+    }
+
+    void testGet_xmlnsQualified()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+            <config:root xmlns:config="https://github.com/mazzy-ax/SysConfigFile">
+              <config:test>
+                Value
+              </config:test>
+            </config:root>
+        ');
+
+        this.assertEquals('Value', config.get('config:test'));
+        this.assertEquals('Value', config.get('config:test'), 'from Cache');
+
+        this.assertEquals('', config.get('test'));                  // not 'Value'!!!
+        this.assertEquals('', config.get('test'), 'from Cache');
+    }
+
     void testGetAll()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test>Value1</test>
-              <test>Value2</test>
-              <test>Value3</test>
-              <test>Value4</test>
+              <test>Value2 </test>
+              <test> Value3</test>
+              <test>
+                  Value4
+
+              </test>
             </root>
         ');
 
@@ -359,15 +646,23 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals(['Value1','Value2','Value3','Value4'], config.getAll('test'), 'from Cache');
     }
 
+    void testGetAll_blank()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), '');
+
+        this.assertEquals(connull(), config.getAll('test'));
+        this.assertEquals(connull(), config.getAll('test'), 'from Cache');
+    }
+
     void testGetAll_Empty()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test></test>
               <test></test>
@@ -378,15 +673,30 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals(['',''], config.getAll('test'), 'from Cache');
     }
 
+    void testGetAll_EmptyParamName()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+            <root>
+              <test>Value1</test>
+              <test>Value1</test>
+            </root>
+        ');
+
+        this.assertEquals(connull(), config.getAll());
+        this.assertEquals(connull(), config.getAll(), 'from Cache');
+
+        this.assertEquals(connull(), config.getAll(''));
+    }
+
     void testGetAll_NotExists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
             </root>
         ');
@@ -395,15 +705,21 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals(connull(), config.getAll('test'), 'from Cache');
     }
 
+    void testGetAll_Null()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.assertEquals(connull(), config.getAll('test'));
+        this.assertEquals(connull(), config.getAll('test'), 'from Cache');
+    }
+
     void testGetAll_OneValue()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test>Value1</test>
             </root>
@@ -416,12 +732,11 @@ public class SysConfigFileTest extends SysTestCase
     void testGetBoolean()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
+        config.clearGlobalCache(); // очистим значения в глобальном кэше
 
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <testTrue>True</testTrue>
               <testFalse>False</testFalse>
@@ -440,32 +755,29 @@ public class SysConfigFileTest extends SysTestCase
             </root>
         ');
 
-        this.assertEquals(true,  config.getBoolean('testTrue'),      'testTrue');
-        this.assertEquals(false, config.getBoolean('testFalse'),     'testFalse');
-        this.assertEquals(true,  config.getBoolean('testtrue'),      'testtrue');
-        this.assertEquals(false, config.getBoolean('testfalse'),     'testfalse');
-        this.assertEquals(true,  config.getBoolean('testTRUE'),      'testTRUE');
-        this.assertEquals(false, config.getBoolean('testFALSE'),     'testFALSE');
-        this.assertEquals(true,  config.getBoolean('test1'),         'test1');
-        this.assertEquals(false, config.getBoolean('test0'),         'test0');
-        this.assertEquals(true,  config.getBoolean('testOn'),        'testOn');
-        this.assertEquals(false, config.getBoolean('testOff'),       'testOff');
-        this.assertEquals(true,  config.getBoolean('testON'),        'testON');
-        this.assertEquals(false, config.getBoolean('testOFF'),       'testOFF');
-        this.assertEquals(true,  config.getBoolean('testEmpty'),     'testEmpty');
-        this.assertEquals(false, config.getBoolean('testOther'),     'testOther');
-        this.assertEquals(false, config.getBoolean('testNotExists'), 'testNotExists');
+        this.assertTrue (config.getBoolean('testTrue'),      'testTrue');
+        this.assertFalse(config.getBoolean('testFalse'),     'testFalse');
+        this.assertTrue (config.getBoolean('testtrue'),      'testtrue');
+        this.assertFalse(config.getBoolean('testfalse'),     'testfalse');
+        this.assertTrue (config.getBoolean('testTRUE'),      'testTRUE');
+        this.assertFalse(config.getBoolean('testFALSE'),     'testFALSE');
+        this.assertTrue (config.getBoolean('test1'),         'test1');
+        this.assertFalse(config.getBoolean('test0'),         'test0');
+        this.assertTrue (config.getBoolean('testOn'),        'testOn');
+        this.assertFalse(config.getBoolean('testOff'),       'testOff');
+        this.assertTrue (config.getBoolean('testON'),        'testON');
+        this.assertFalse(config.getBoolean('testOFF'),       'testOFF');
+        this.assertTrue (config.getBoolean('testEmpty'),     'testEmpty');
+        this.assertFalse(config.getBoolean('testOther'),     'testOther');
+        this.assertFalse(config.getBoolean('testNotExists'), 'testNotExists');
     }
 
     void testGetBy()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test attr="ab">Value1</test>
               <test attr="bc">Value2</test>
@@ -475,20 +787,27 @@ public class SysConfigFileTest extends SysTestCase
         ');
 
         // вернет найденный элемент, соответствующий первому выражению.
-        // проигнорирует остальные выражения
         this.assertEquals('Value2', config.getBy(['test[@attr="bc"]', 'test[not(@attr)]'], 'defaultValue'));
         this.assertEquals('Value2', config.getBy(['test[@attr="bc"]', 'test[not(@attr)]'], 'defaultValue'), 'fromCache');
+    }
+
+    void testGetBy_Blank()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), @'');
+
+        this.assertEquals('defaultValue', config.getBy(['test[@attr="bc"]', 'test[not(@attr)]'], 'defaultValue'));
+        this.assertEquals('defaultValue', config.getBy(['test[@attr="bc"]', 'test[not(@attr)]'], 'defaultValue'), 'fromCache');
     }
 
     void testGetBy_ContainerEmpty()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test attr="ab">Value1</test>
               <test attr="bc">Value2</test>
@@ -504,12 +823,9 @@ public class SysConfigFileTest extends SysTestCase
     void testGetBy_ContainerNonString_Except()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test attr="ab">Value1</test>
               <test attr="bc">Value2</test>
@@ -528,12 +844,9 @@ public class SysConfigFileTest extends SysTestCase
     void testGetBy_ContainerNonString_Ok()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test attr="ab">Value1</test>
               <test attr="bc">Value2</test>
@@ -551,12 +864,9 @@ public class SysConfigFileTest extends SysTestCase
     void testGetBy_FirstExists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test attr="ab">Value1</test>
               <test attr="bc">Value2</test>
@@ -569,11 +879,10 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals('Value2', config.getBy(['test[@attr="bc"]', 'test[not(@attr)]'], 'defaultValue'), 'order 1, fromCache');
 
         // порядок следования элементов не должен влиять на результат getBy
-        config = new SysConfigFile(configName);
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
+        config = new SysConfigFile(configName,tempPath);
+        config.clearGlobalCache(); // очистим значения в глобальном кэше
 
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test>Value4</test>
               <test attr="ab">Value1</test>
@@ -589,12 +898,9 @@ public class SysConfigFileTest extends SysTestCase
     void testGetBy_FirstNotExists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test attr="ab">Value1</test>
               <test attr="bc">Value2</test>
@@ -607,11 +913,10 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals('Value4', config.getBy(['test[@attr="xy"]', 'test[not(@attr)]'], 'defaultValue'), 'order 1, fromCache');
 
         // порядок следования элементов не должен влиять на результат getBy
-        config = new SysConfigFile(configName);
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
+        config = new SysConfigFile(configName,tempPath);
+        config.clearGlobalCache(); // очистим значения в глобальном кэше
 
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test>Value4</test>
               <test attr="ab">Value1</test>
@@ -624,15 +929,23 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals('Value4', config.getBy(['test[@attr="xy"]', 'test[not(@attr)]'], 'defaultValue'), 'order 2, fromCache');
     }
 
+    void testGetBy_Null()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        // config-файл отсутствует
+
+        this.assertEquals('defaultValue', config.getBy(['test[@attr="bc"]', 'test[not(@attr)]'], 'defaultValue'));
+        this.assertEquals('defaultValue', config.getBy(['test[@attr="bc"]', 'test[not(@attr)]'], 'defaultValue'), 'fromCache');
+    }
+
     void testGetBy_OmitParamWithoutPrev()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test attr="ab">Value1</test>
               <test attr="bc">Value2</test>
@@ -641,20 +954,15 @@ public class SysConfigFileTest extends SysTestCase
             </root>
         ');
 
-        this.parmExceptionExpected(true);
-
-        config.getBy();
+        this.assertEquals('', config.getBy());
     }
 
     void testGetBy_OmitParamWithPrev()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test attr="ab">Value1</test>
               <test attr="bc">Value2</test>
@@ -671,12 +979,9 @@ public class SysConfigFileTest extends SysTestCase
     void testGetBy_OneValue()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test>Value4</test>
             </root>
@@ -689,12 +994,9 @@ public class SysConfigFileTest extends SysTestCase
     void testGetBy_ValueEmpty()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test attr="ab"></test>
               <test>someValue</test>
@@ -708,12 +1010,9 @@ public class SysConfigFileTest extends SysTestCase
     void testGetBy_ValueNotExists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
             </root>
         ');
@@ -722,49 +1021,87 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals('defaultValue', config.getBy(['test[@attr="ab"]', 'test[not(@attr)]'], 'defaultValue'), 'from Cache');
     }
 
+    //
+    // Test example from https://github.com/mazzy-ax/SysConfigFile/blob/master/README.md
+    //
+    void testKnownTrouble()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</id>
+                <name>Microsoft Dynamics AX</name>
+                <reportTemplateFolder>\\dax\template\</reportTemplateFolder>
+
+                <sender>Axapta</sender>
+                <sender email="note">Notification server</sender>
+                <sender email="mail">Company name</sender>
+
+                <AOS>
+                    <batch serverId="01@AOS" />
+                    <batch serverId="01@RESERV">true</batch>
+                </AOS>
+            </config>
+        ');
+
+        this.assertFalse(config.checkExists('Name')); // нет такого, поскольку xml и XPath - регистрозависимы
+
+        this.assertTrue (config.checkExists('name')); // а такой вполне есть
+        this.assertTrue (config.checkExists('Name')); // Опа! теперь и такой есть, поскольку найден в глобальном кэше
+    }
+
     void testName()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = SysConfigFile::construct(configName);
-
+        SysConfigFile   config      = SysConfigFile::construct(configName).clearGlobalCache();
+    ;
         this.assertEquals(configName, config.name());
     }
 
     void testName_Empty()
     {
-        SysConfigFile config = SysConfigFile::construct();
-
+        SysConfigFile config = SysConfigFile::construct().clearGlobalCache();
+    ;
         this.assertEquals('Axapta', config.name());
+    }
+
+    void testPackable()
+    {
+        SysPackableTest test = SysPackableTest::newClassId(classnum(SysConfigFile));
+        SysLastMinuteCheckStatus status = test.run();
+
+        if( status == SysLastMinuteCheckStatus::Skipped )
+            return; // нет старой версии класса в old-слое - сравнить список параметров не с чем. Поэтому возвращаемся без проверки
+
+        this.assertEquals(SysLastMinuteCheckStatus::Passed, status);
     }
 
     void testToBoolean()
     {
-    ;
-        this.assertEquals(true,  SysConfigFile::toBoolean('True'),      'testTrue');
-        this.assertEquals(false, SysConfigFile::toBoolean('False'),     'testFalse');
-        this.assertEquals(true,  SysConfigFile::toBoolean('true'),      'testtrue');
-        this.assertEquals(false, SysConfigFile::toBoolean('false'),     'testfalse');
-        this.assertEquals(true,  SysConfigFile::toBoolean('TRUE'),      'testTRUE');
-        this.assertEquals(false, SysConfigFile::toBoolean('FALSE'),     'testFALSE');
-        this.assertEquals(true,  SysConfigFile::toBoolean('1'),         'test1');
-        this.assertEquals(false, SysConfigFile::toBoolean('0'),         'test0');
-        this.assertEquals(true,  SysConfigFile::toBoolean('On'),        'testOn');
-        this.assertEquals(false, SysConfigFile::toBoolean('Off'),       'testOff');
-        this.assertEquals(true,  SysConfigFile::toBoolean('ON'),        'testON');
-        this.assertEquals(false, SysConfigFile::toBoolean('OFF'),       'testOFF');
-        this.assertEquals(true,  SysConfigFile::toBoolean(''),          'testEmpty');   // не очевидно, но именно так. см. комментарий к методу toBoolean
-        this.assertEquals(false, SysConfigFile::toBoolean('Other'),     'testOther');
+        this.assertTrue (SysConfigFile::toBoolean('True'),      'testTrue');
+        this.assertFalse(SysConfigFile::toBoolean('False'),     'testFalse');
+        this.assertTrue (SysConfigFile::toBoolean('true'),      'testtrue');
+        this.assertFalse(SysConfigFile::toBoolean('false'),     'testfalse');
+        this.assertTrue (SysConfigFile::toBoolean('TRUE'),      'testTRUE');
+        this.assertFalse(SysConfigFile::toBoolean('FALSE'),     'testFALSE');
+        this.assertTrue (SysConfigFile::toBoolean('1'),         'test1');
+        this.assertFalse(SysConfigFile::toBoolean('0'),         'test0');
+        this.assertTrue (SysConfigFile::toBoolean('On'),        'testOn');
+        this.assertFalse(SysConfigFile::toBoolean('Off'),       'testOff');
+        this.assertTrue (SysConfigFile::toBoolean('ON'),        'testON');
+        this.assertFalse(SysConfigFile::toBoolean('OFF'),       'testOFF');
+        this.assertTrue (SysConfigFile::toBoolean(''),          'testEmpty');   // не очевидно, но именно так. см. комментарий к методу toBoolean
+        this.assertFalse(SysConfigFile::toBoolean('Other'),     'testOther');
     }
 
     void testValue()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test>Value</test>
             </root>
@@ -776,12 +1113,9 @@ public class SysConfigFileTest extends SysTestCase
     void testValue_Empty()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test></test>
             </root>
@@ -793,11 +1127,8 @@ public class SysConfigFileTest extends SysTestCase
     void testValue_NotExists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
         this.parmExceptionExpected(true);
 
         SysConfigFile::value('test', configName, tempPath);
@@ -806,12 +1137,9 @@ public class SysConfigFileTest extends SysTestCase
     void testValueBoolean()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test>true</test>
             </root>
@@ -823,12 +1151,9 @@ public class SysConfigFileTest extends SysTestCase
     void testValueBoolean_Empty()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test></test>
               <testEmpty />
@@ -842,12 +1167,9 @@ public class SysConfigFileTest extends SysTestCase
     void testValueBoolean_NotExists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
             </root>
         ');
@@ -858,12 +1180,9 @@ public class SysConfigFileTest extends SysTestCase
     void testValueBy()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test attr="ab">Value1</test>
               <test attr="bc">Value2</test>
@@ -881,12 +1200,9 @@ public class SysConfigFileTest extends SysTestCase
     void testValueOrDefault()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test>Value</test>
             </root>
@@ -898,12 +1214,9 @@ public class SysConfigFileTest extends SysTestCase
     void testValueOrDefault_Empty()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
               <test></test>
             </root>
@@ -915,12 +1228,9 @@ public class SysConfigFileTest extends SysTestCase
     void testValueOrDefault_NotExists()
     {
         str             configName  = funcname();
-        SysConfigFile   config      = new SysConfigFile(configName);
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
-        config.parmDefaultDirectory(tempPath); // устанавливаем вручную вместо Appl-каталога
-        config.dataFlush();
-
-        this.writeXml(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
+        this.writeToFile(config.filePath(), @'<?xml version="1.0" encoding="utf-8"?>
             <root>
             </root>
         ');
@@ -928,17 +1238,396 @@ public class SysConfigFileTest extends SysTestCase
         this.assertEquals('DefaultValue', SysConfigFile::valueOrDefault('test', 'DefaultValue', configName, tempPath));
     }
 
-    protected void writeXml(str filePath, str xmlStr)
+    void testXSD()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.schemaPath(),@'<?xml version="1.0" encoding="utf-8"?>
+            <xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="config">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="id" type="xs:normalizedString" />
+                    <xs:element name="name" type="xs:normalizedString" />
+                    <xs:element name="enabled" type="xs:boolean" />
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
+        ');
+
+        this.writeToFile(config.filePath(), strfmt(@'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</id>
+                <name>Microsoft Dynamics AX</name>
+                <enabled>true</enabled>
+            </config>
+        ', configName));
+
+        this.assertTrue(config.checkFileValid(),'checkFileValid');
+        this.assertTrue(config.checkSchemaValid(),'checkSchemaValid');
+
+        this.parmExceptionExpected(false);
+        config.ensureFileValid();
+        config.ensureSchemaValid();
+
+        this.assertEquals('PROD', config.get('id'));
+        this.assertTrue(config.getBoolean('enabled'));
+    }
+
+    void testXSD_newParams()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath,@'<?xml version="1.0" encoding="utf-8"?>
+            <xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="config">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="id" type="xs:normalizedString" />
+                    <xs:element name="name" type="xs:normalizedString" />
+                    <xs:element name="enabled" type="xs:boolean" />
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
+        ',
+
+        @'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</id>
+                <name>Microsoft Dynamics AX</name>
+                <enabled>true</enabled>
+            </config>
+        ').clearGlobalCache();
+
+        this.assertFalse(config.checkFileExists());
+        this.assertTrue(config.checkFileValid());
+
+        this.parmExceptionExpected(false);
+        config.ensureFileValid();
+
+        this.assertEquals('PROD', config.get('id'));
+    }
+
+    void testXSD_resource()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToResource(config.schemaResourceName(),@'<?xml version="1.0" encoding="utf-8"?>
+            <xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="config">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="id" type="xs:normalizedString" />
+                    <xs:element name="name" type="xs:normalizedString" />
+                    <xs:element name="enabled" type="xs:boolean" />
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
+        ');
+
+        this.writeToFile(config.filePath(), strfmt(@'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</id>
+                <name>Microsoft Dynamics AX</name>
+                <enabled>true</enabled>
+            </config>
+        ', configName));
+
+
+        this.assertTrue(config.checkFileValid(),'checkFileValid');
+        this.assertTrue(config.checkSchemaValid(),'checkSchemaValid');
+
+        this.parmExceptionExpected(false);
+        config.ensureFileValid();
+        config.ensureSchemaValid();
+
+        this.assertEquals('PROD', config.get('id'));
+        this.assertTrue(config.getBoolean('enabled'));
+    }
+
+    void testXSD_resourceInvalid()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToResource(config.schemaResourceName(),@'<?xml version="1.0" encoding="utf-8"?>
+            <xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="config">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="id" type="xs:normalizedString" />
+                    <xs:element name="name" type="xs:normalizedString" />
+                    <xs:element name="enabled" type="xs:XXX" />
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
+        ');
+
+
+        this.writeToFile(config.filePath(), strfmt(@'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</id>
+                <name>Microsoft Dynamics AX</name>
+                <enabled>true</enabled>
+            </config>
+        ', configName));
+
+
+        this.assertFalse(config.checkSchemaValid(),'checkSchemaValid');
+        this.assertTrue(config.checkFileValid(),'checkFileValid');
+
+        this.parmExceptionExpected(false);
+        config.ensureFileValid();
+
+        this.assertEquals('PROD', config.get('id'));
+        this.assertTrue(config.getBoolean('enabled'));
+
+        // при проверке
+        this.parmExceptionExpected(
+            true,
+            strfmt("Line:8, Pos:18: Type 'http://www.w3.org/2001/XMLSchema:XXX' is not declared.\r\n%1\r\n%2",
+                    config.schemaPath(),
+                    config.schema())
+        );
+        config.ensureSchemaValid();
+    }
+
+    void testXSD_schemaInvalid()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.schemaPath(),@'<?xml version="1.0" encoding="utf-8"?>
+            <xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="config">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="id" type="xs:normalizedString" />
+                    <xs:element name="name" type="xs:normalizedString" />
+                    <xs:element name="enabled" type="xs:XXX" />
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
+        ');
+
+
+        this.writeToFile(config.filePath(), strfmt(@'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</id>
+                <name>Microsoft Dynamics AX</name>
+                <enabled>true</enabled>
+            </config>
+        ', configName));
+
+
+        this.assertFalse(config.checkSchemaValid(),'checkSchemaValid');
+        this.assertTrue(config.checkFileValid(),'checkFileValid');
+
+        this.parmExceptionExpected(false);
+        config.ensureFileValid();
+
+        this.assertEquals('PROD', config.get('id'));
+        this.assertTrue(config.getBoolean('enabled'));
+
+        // при проверке
+        this.parmExceptionExpected(
+            true,
+            strfmt("Line:8, Pos:18: Type 'http://www.w3.org/2001/XMLSchema:XXX' is not declared.\r\n%1\r\n%2",
+                    config.schemaPath(),
+                    config.schema())
+        );
+        config.ensureSchemaValid();
+    }
+
+    void testXSD_schemaNull()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.filePath(), strfmt(@'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</id>
+                <name>Microsoft Dynamics AX</name>
+                <enabled>true</enabled>
+            </config>
+        ', configName));
+
+        this.assertTrue(config.checkFileValid(),'checkFileValid');
+        this.assertTrue(config.checkSchemaValid(),'checkSchemaValid');
+
+        this.parmExceptionExpected(false);
+        config.ensureFileValid();
+        config.ensureSchemaValid();
+
+        this.assertEquals('PROD', config.get('id'));
+        this.assertTrue(config.getBoolean('enabled'));
+    }
+
+    void testXSD_schemaValid_fileBroken()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.schemaPath(),@'<?xml version="1.0" encoding="utf-8"?>
+            <xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="config">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="id" type="xs:normalizedString" />
+                    <xs:element name="name" type="xs:normalizedString" />
+                    <xs:element name="enabled" type="xs:boolean" />
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
+        ');
+
+        this.writeToFile(config.filePath(), strfmt(@'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</broken>
+            </config>
+        ', configName));
+
+
+        this.parmExceptionExpected(true, "The 'id' start tag on line 3 does not match the end tag of 'broken'. Line 3, position 23.");
+        this.assertFalse(config.checkFileValid(),'checkFileValid');
+    }
+
+    void testXSD_schemaValid_fileInvalid()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.schemaPath(),@'<?xml version="1.0" encoding="utf-8"?>
+            <xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="config">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="id" type="xs:normalizedString" />
+                    <xs:element name="name" type="xs:normalizedString" />
+                    <xs:element name="enabled" type="xs:boolean" />
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
+        ');
+
+
+        this.writeToFile(config.filePath(), strfmt(@'<?xml version="1.0" encoding="utf-8"?>
+            <config>
+                <id>PROD</id>
+                <name>Microsoft Dynamics AX</name>
+                <invalidParam>\\dax\template\</invalidParam>
+            </config>
+        ', configName));
+
+
+        this.assertFalse(config.checkFileValid(),'checkFileValid');
+        this.assertTrue(config.checkSchemaValid(),'checkSchemaValid');
+
+        this.parmExceptionExpected(false);
+        config.ensureSchemaValid();
+
+        this.parmExceptionExpected(
+            true,
+            strfmt("Line:5, Pos:14: The element 'config' has invalid child element 'invalidParam'. List of possible elements expected: 'enabled'.\r\n%1\r\n%2",
+                    config.filePath(),
+                    config.file())
+        );
+        config.ensureFileValid();
+    }
+
+    void testXSD_schemaValid_fileNull()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(config.schemaPath(),@'<?xml version="1.0" encoding="utf-8"?>
+            <xs:schema attributeFormDefault="unqualified" elementFormDefault="qualified" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+              <xs:element name="config">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="id" type="xs:normalizedString" />
+                    <xs:element name="name" type="xs:normalizedString" />
+                    <xs:element name="enabled" type="xs:boolean" />
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:schema>
+        ');
+
+        this.assertTrue(config.checkFileValid(),'checkFileValid');
+        this.assertTrue(config.checkSchemaValid(),'checkSchemaValid');
+
+        this.parmExceptionExpected(false);
+        config.ensureSchemaValid();
+        config.ensureFileValid();
+    }
+
+    protected void writeToFile(str filePath, str text)
     {
         #File
         TextBuffer textBuffer = new TextBuffer();
     ;
-        textBuffer.appendText(xmlStr);
+        textBuffer.appendText(text);
 
         new FileIOPermission(filePath, #io_write).assert();
 
         textBuffer.toFile(filePath, FileEncoding::UTF8);
 
         CodeAccessPermission::revertAssert();
+    }
+
+    protected void writeToResource( SysElementName      resourceName,
+                                    str                 text,
+                                    str                 fileNameExt     = '.xsd',
+                                    SysResourceType     resourceType    = SysResourceType::XMLDoc)
+    {
+        ResourceNode    resourceNode;
+    ;
+        if( strStartsWith(fileNameExt, '.') == false )
+            throw error("При записи ресурса в тестовых методах имя файла должно начинаться с точки. Рабочие данные скорее всего с точки не начинаются.");
+
+        resourceNode = SysResource::getResourceNode(resourceName);
+        if( resourceNode && resourceNode.filename() != fileNameExt )
+        {
+            throw error(strfmt("Имя файла (%1) не совпадает с resourceNode.filename(%2). Есть риск, что ресурс с именем %3 содержит рабочие данные. Тестирование прекращено, ресурс не изменен",
+                fileNameExt,
+                resourceNode.filename(),
+                resourceName));
+        }
+
+        if( SysConfigFileTest::writeToResource_Client([resourceName, text, fileNameExt, resourceType]) )
+            resourceNameSet.add(resourceName);
+    }
+
+    // сохранять в AOT можно только из клиента.
+    private static client boolean writeToResource_Client(container params)
+    {
+        SysElementName      resourceName;
+        str                 text;
+        str                 fileNameExt;
+        SysResourceType     resourceType;
+
+        [resourceName, text, fileNameExt, resourceType] = params;
+
+        // При записи ресурса возможна неприятная ситуация со слоями: если, например, мы ведем тестирование в слое cus,
+        // а какой-то редиска создал ресурс с этим именем в слое usr (например, запуская это же тестирование в слое usr)
+        // то записать-то мы запишем. Но вот что прочитаем? Вопрос. Пока игнорируем возможные конфликты в слоях.
+        // Дайте знать, если здесь нужно пожертвовать скоростью, но повысить надежность: https://github.com/mazzy-ax/SysConfigFile/issues
+
+        // Также не тестировалось при включенной системе контроля версий.
+        // Дайте знать, если есть проблемы: https://github.com/mazzy-ax/SysConfigFile/issues
+
+        if( SysResource::saveResource(resourceName, fileNameExt, [text], resourceType, DupRecAction::Overwrite) )
+            return true;
+
+        return false;
     }
 }
