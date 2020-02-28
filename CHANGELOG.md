@@ -2,6 +2,11 @@
 
 see also [Releases on GitHub](https://github.com/mazzy-ax/SysConfigFile/releases)
 
+## CRLF в .xpo-файлах - 2020-02-28
+
+В git-репозитории обновлены .xpo-файлы. Теперь они содержат `CRLF`, а не `LF`.
+Это изменение сделано для тех, кто не пользуется командой `git clone`, а выкачивает и распаковывает .zip-архив из git-репозитория
+
 ## [2.0.0](https://github.com/mazzy-ax/SysConfigFile/compare/1.0.0...2.0.0) - 2019-08-10
 
 Добавлено:
