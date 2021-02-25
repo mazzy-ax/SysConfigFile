@@ -961,6 +961,8 @@ Formatversion: 1
       SOURCE #setUp
         #public void setUp()
         #{
+        #    str aosInstance = Session::getAOSInstance();
+        #
         #    super();
         #
         #    resourceNameSet = new Set(Types::String);
@@ -968,7 +970,7 @@ Formatversion: 1
         #    new InteropPermission(InteropKind::ClrInterop).assert();
         #
         #    tempPath = System.IO.Path::GetTempPath();
-        #    tempPath = strfmt(@'%1%2\Config\', tempPath, sessionid());
+        #    tempPath = strfmt(@'%1ax6-%2-Config%3\', tempPath, aosInstance, sessionid());
         #
         #    System.IO.Directory::CreateDirectory(tempPath);
         #}
@@ -2688,7 +2690,7 @@ Formatversion: 1
         #}
       ENDSOURCE
       SOURCE #writeToFile
-        #protected void writeToFile(str filePath, str text = '')
+        #protected void writeToFile(str filePath, str text = @'<?xml version="1.0" encoding="utf-8"?>')
         #{
         #    #File
         #    TextBuffer textBuffer = new TextBuffer();

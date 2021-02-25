@@ -1,6 +1,19 @@
 # SysConfigFile Changelog
 
-see also [Releases on GitHub](https://github.com/mazzy-ax/SysConfigFile/releases) and [Unreleased](https://github.com/mazzy-ax/SysConfigFile/compare/2.1.0...master) on GitHub.
+see also [Releases on GitHub](https://github.com/mazzy-ax/SysConfigFile/releases) and [Unreleased](https://github.com/mazzy-ax/SysConfigFile/compare/2.1.1...master) on GitHub.
+
+## [2.1.1](https://github.com/mazzy-ax/SysConfigFile/compare/2.1.0...2.1.1) - 2021-02-25
+
+Исправлено:
+
+* Теперь можно запускать одновременно тесты класса SysConfigFile в разных версиях и в разных инстансах Аксапты.
+  В названии временного каталога для тестов содержатся код версии Аксапты и название инстанса дополнительно к коду сессии,
+  который присутствовал и раньше.
+
+* Каталоги для тестовых данных находятся на одном уровне внутри temp, а не во вложенных подкаталогах как раньше.
+  Это упрощает очистку и контроль за временными файлами.
+
+* Если в тесте не указан текст, который нужно сохранять, то тест сохранит заголовок xml-файла, а не пустую строку.
 
 ## [2.1.0](https://github.com/mazzy-ax/SysConfigFile/compare/2.0.0...2.1.0) - 2021-02-25
 

@@ -957,6 +957,8 @@ Formatversion: 1
       SOURCE #setUp
         #public void setUp()
         #{
+        #    str aosInstance = Session::getAOSInstance();
+        #
         #    super();
         #
         #    resourceNameSet = new Set(Types::String);
@@ -964,7 +966,7 @@ Formatversion: 1
         #    new InteropPermission(InteropKind::ClrInterop).assert();
         #
         #    tempPath = System.IO.Path::GetTempPath();
-        #    tempPath = strfmt(@'%1%2\Config\', tempPath, sessionid());
+        #    tempPath = strfmt(@'%1ax5-%2-Config%3\', tempPath, aosInstance, sessionid());
         #
         #    System.IO.Directory::CreateDirectory(tempPath);
         #}
@@ -1285,7 +1287,7 @@ Formatversion: 1
         #    SysConfigFile   config      = new SysConfigFile(configName, tempPath, 'schemaText', 'fileText').clearGlobalCache();
         #    container       packedCon   = config.pack();
         #    SysConfigFile   config2     = SysConfigFile::create(packedCon);
-        #
+        #;
         #    this.assertEquals(configName, config2.name());
         #    this.assertEquals(tempPath, config2.directory());
         #    this.assertEquals(config.file(), config2.file());
@@ -1460,6 +1462,67 @@ Formatversion: 1
         #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
         #}
       ENDSOURCE
+      SOURCE #testFilePath_2
+        #void testFilePath_2()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #;
+        #    this.writeToFile(tempPath + configName + '.config');
+        #    this.writeToFile(tempPath + configName + '.config.xml');
+        #
+        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
+      SOURCE #testFilePath_3
+        #void testFilePath_3()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #;
+        #    this.writeToFile(tempPath + configName + '.config');
+        #    this.writeToFile(tempPath + configName + '.config.xml');
+        #    this.writeToFile(tempPath + configName + '.xml');
+        #
+        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
+      SOURCE #testFilePath_4
+        #void testFilePath_4()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #;
+        #    this.writeToFile(tempPath + configName + '.config');
+        #    this.writeToFile(tempPath + configName + '.config.xml');
+        #    this.writeToFile(tempPath + configName + '.xml');
+        #    this.writeToFile(tempPath + configName + '');
+        #
+        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
+      SOURCE #testFilePath_Config
+        #void testFilePath_Config()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #
+        #    this.writeToFile(tempPath + configName + '.config'); // просто создаем файл
+        #
+        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
+      SOURCE #testFilePath_ConfigXml
+        #void testFilePath_ConfigXml()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #;
+        #    this.writeToFile(tempPath + configName + '.config.xml');
+        #
+        #    this.assertEquals(strfmt(@'%1%2.config.xml', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
       SOURCE #testFilePath_EmptyExt
         #void testFilePath_EmptyExt()
         #{
@@ -1480,67 +1543,6 @@ Formatversion: 1
         #    this.writeToFile(tempPath + configName + '.xml'); // просто создаем файл
         #
         #    this.assertEquals(strfmt(@'%1%2.xml', tempPath, configName), config.filePath());
-        #}
-      ENDSOURCE
-      SOURCE #testFilePath_Config
-        #void testFilePath_Config()
-        #{
-        #    str             configName  = funcname();
-        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
-        #;
-        #    this.writeToFile(tempPath + configName + '.config'); // просто создаем файл
-        #
-        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
-        #}
-      ENDSOURCE
-      SOURCE #testFilePath_ConfigXml
-        #void testFilePath_ConfigXml()
-        #{
-        #    str             configName  = funcname();
-        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
-        #;
-        #    this.writeToFile(tempPath + configName + '.config.xml');
-        #
-        #    this.assertEquals(strfmt(@'%1%2.config.xml', tempPath, configName), config.filePath());
-        #}
-      ENDSOURCE
-      SOURCE #testFilePath_3
-        #void testFilePath_3()
-        #{
-        #    str             configName  = funcname();
-        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
-        #;
-        #    this.writeToFile(tempPath + configName + '.config');
-        #    this.writeToFile(tempPath + configName + '.config.xml');
-        #    this.writeToFile(tempPath + configName + '.xml');
-        #
-        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
-        #}
-      ENDSOURCE
-      SOURCE #testFilePath_2
-        #void testFilePath_2()
-        #{
-        #    str             configName  = funcname();
-        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
-        #;
-        #    this.writeToFile(tempPath + configName + '.config');
-        #    this.writeToFile(tempPath + configName + '.config.xml');
-        #
-        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
-        #}
-      ENDSOURCE
-      SOURCE #testFilePath_4
-        #void testFilePath_4()
-        #{
-        #    str             configName  = funcname();
-        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
-        #;
-        #    this.writeToFile(tempPath + configName + '.config');
-        #    this.writeToFile(tempPath + configName + '.config.xml');
-        #    this.writeToFile(tempPath + configName + '.xml');
-        #    this.writeToFile(tempPath + configName + '');
-        #
-        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
         #}
       ENDSOURCE
       SOURCE #testGet
@@ -2684,7 +2686,7 @@ Formatversion: 1
         #}
       ENDSOURCE
       SOURCE #writeToFile
-        #protected void writeToFile(str filePath, str text = '')
+        #protected void writeToFile(str filePath, str text = @'<?xml version="1.0" encoding="utf-8"?>')
         #{
         #    #File
         #    TextBuffer textBuffer = new TextBuffer();

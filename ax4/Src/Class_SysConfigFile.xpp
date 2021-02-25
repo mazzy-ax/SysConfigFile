@@ -87,40 +87,6 @@ public final class SysConfigFile implements SysPackable
     #endmacro
 
 
-    // принимает контейнер, содержащий полные имена файлов
-    // перебирает имена и проверяет существует ли файл
-    // возвращает первый существующий файл
-    // если не существует ни одного файла, то возвращает первое имя
-    protected Filename chooseExistOfFirstFile(container paths)
-    {
-        Filename path;
-        int      len = conlen(paths);
-        int      i;
-
-        for( i=1; i<=len; i++ )
-        {
-            path = conpeek(paths, i);
-            if( this.isFileExists(path) )
-            {
-                return path;
-            }
-        }
-
-        path = conpeek(paths, 1);
-        return path;
-    }
-
-    // возвращает true, файл существует
-    protected final boolean isFileExists(Filename path)
-    {
-        new InteropPermission(InteropKind::ClrInterop).assert();
-
-        if( System.IO.File::Exists(path) )
-            return true;
-
-        return false;
-    }
-
     // возвращает true, если параметр присутствует в конфигурационном файле.
     public final boolean checkExists(str paramName)
     {
@@ -191,6 +157,29 @@ public final class SysConfigFile implements SysPackable
             return false;
 
         return true;
+    }
+
+    // принимает контейнер, содержащий полные имена файлов
+    // перебирает имена и проверяет существует ли файл
+    // возвращает первый существующий файл
+    // если не существует ни одного файла, то возвращает первое имя
+    protected Filename chooseExistOfFirstFile(container paths)
+    {
+        Filename path;
+        int      len = conlen(paths);
+        int      i;
+
+        for( i=1; i<=len; i++ )
+        {
+            path = conpeek(paths, i);
+            if( this.isFileExists(path) )
+            {
+                return path;
+            }
+        }
+
+        path = conpeek(paths, 1);
+        return path;
     }
 
     // очищает из кэша значения всех прочитанных параметров данного конфига
@@ -478,6 +467,17 @@ public final class SysConfigFile implements SysPackable
             owner = strfmt("%1:%2", funcname(), this.name());
 
         return owner;
+    }
+
+    // возвращает true, файл существует
+    protected final boolean isFileExists(Filename path)
+    {
+        new InteropPermission(InteropKind::ClrInterop).assert();
+
+        if( System.IO.File::Exists(path) )
+            return true;
+
+        return false;
     }
 
     // загрузить текст из файла, который размещен по указанному пути

@@ -10,6 +10,8 @@ public class SysConfigFileTest extends SysTestCase
 
     public void setUp()
     {
+        str aosInstance = Session::getAOSInstance();
+
         super();
 
         resourceNameSet = new Set(Types::String);
@@ -17,7 +19,7 @@ public class SysConfigFileTest extends SysTestCase
         new InteropPermission(InteropKind::ClrInterop).assert();
 
         tempPath = System.IO.Path::GetTempPath();
-        tempPath = strfmt(@'%1%2\Config\', tempPath, sessionid());
+        tempPath = strfmt(@'%1ax6-%2-Config%3\', tempPath, aosInstance, sessionid());
 
         System.IO.Directory::CreateDirectory(tempPath);
     }
@@ -1648,7 +1650,7 @@ public class SysConfigFileTest extends SysTestCase
         config.ensureFileValid();
     }
 
-    protected void writeToFile(str filePath, str text = '')
+    protected void writeToFile(str filePath, str text = @'<?xml version="1.0" encoding="utf-8"?>')
     {
         #File
         TextBuffer textBuffer = new TextBuffer();
