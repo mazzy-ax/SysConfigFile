@@ -1,6 +1,6 @@
 # SysConfigFile Changelog
 
-see also [Releases on GitHub](https://github.com/mazzy-ax/SysConfigFile/releases) and [Unreleased](https://github.com/mazzy-ax/SysConfigFile/compare/2.1.0...main) on GitHub.
+see also [Releases on GitHub](https://github.com/mazzy-ax/SysConfigFile/releases) and [Unreleased](https://github.com/mazzy-ax/SysConfigFile/compare/2.1.0...master) on GitHub.
 
 ## [2.1.0](https://github.com/mazzy-ax/SysConfigFile/compare/2.0.0...2.1.0) - 2021-02-25
 
