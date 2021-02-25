@@ -1,6 +1,6 @@
-﻿//
+//
 // https://github.com/mazzy-ax/SysConfigFile
-// (с) 2019 mazzy, v2.0, MIT License
+// (с) 2019, 2021 mazzy, v2.1, MIT License
 //
 // класс всегда выполняется на сервере!! см в AOT-параметры класса
 public class SysConfigFileTest extends SysTestCase
@@ -481,7 +481,85 @@ public class SysConfigFileTest extends SysTestCase
         str             configName  = funcname();
         SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
     ;
+        // нет никаких config-файлов
+
         this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+    }
+
+    void testFilePath_2()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(tempPath + configName + '.config');
+        this.writeToFile(tempPath + configName + '.config.xml');
+
+        this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+    }
+
+    void testFilePath_3()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(tempPath + configName + '.config');
+        this.writeToFile(tempPath + configName + '.config.xml');
+        this.writeToFile(tempPath + configName + '.xml');
+
+        this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+    }
+
+    void testFilePath_4()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(tempPath + configName + '.config');
+        this.writeToFile(tempPath + configName + '.config.xml');
+        this.writeToFile(tempPath + configName + '.xml');
+        this.writeToFile(tempPath + configName + '');
+
+        this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+    }
+
+    void testFilePath_Config()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(tempPath + configName + '.config'); // просто создаем файл
+
+        this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+    }
+
+    void testFilePath_ConfigXml()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(tempPath + configName + '.config.xml');
+
+        this.assertEquals(strfmt(@'%1%2.config.xml', tempPath, configName), config.filePath());
+    }
+
+    void testFilePath_EmptyExt()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(tempPath + configName + ''); // просто создаем файл
+
+        this.assertEquals(strfmt(@'%1%2', tempPath, configName), config.filePath());
+    }
+
+    void testFilePath_Xml()
+    {
+        str             configName  = funcname();
+        SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+    ;
+        this.writeToFile(tempPath + configName + '.xml'); // просто создаем файл
+
+        this.assertEquals(strfmt(@'%1%2.xml', tempPath, configName), config.filePath());
     }
 
     void testGet()
@@ -1570,7 +1648,7 @@ public class SysConfigFileTest extends SysTestCase
         config.ensureFileValid();
     }
 
-    protected void writeToFile(str filePath, str text)
+    protected void writeToFile(str filePath, str text = '')
     {
         #File
         TextBuffer textBuffer = new TextBuffer();

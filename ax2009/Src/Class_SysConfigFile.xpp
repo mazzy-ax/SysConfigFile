@@ -1,6 +1,6 @@
-﻿//
+//
 // https://github.com/mazzy-ax/SysConfigFile
-// (с) 2019 mazzy, v2.0, MIT License
+// (с) 2019, 2021 mazzy, v2.1, MIT License
 //
 // класс всегда выполняется на сервере!! см в AOT-параметры класса.
 // класс и методы объявлены как final только ради производительности.
@@ -99,12 +99,7 @@ public final class SysConfigFile implements SysPackable
     // возвращает true, если config-файл существует
     public final boolean checkFileExists()
     {
-        new InteropPermission(InteropKind::ClrInterop).assert();
-
-        if( System.IO.File::Exists(this.filePath()) )
-            return true;
-
-        return false;
+        return this.isFileExists(this.filePath());
     }
 
     // возвращает true, если:
@@ -162,6 +157,29 @@ public final class SysConfigFile implements SysPackable
             return false;
 
         return true;
+    }
+
+    // принимает контейнер, содержащий полные имена файлов
+    // перебирает имена и проверяет существует ли файл
+    // возвращает первый существующий файл
+    // если не существует ни одного файла, то возвращает первое имя
+    protected Filename chooseExistOfFirstFile(container paths)
+    {
+        Filename path;
+        int      len = conlen(paths);
+        int      i;
+
+        for( i=1; i<=len; i++ )
+        {
+            path = conpeek(paths, i);
+            if( this.isFileExists(path) )
+            {
+                return path;
+            }
+        }
+
+        path = conpeek(paths, 1);
+        return path;
     }
 
     // очищает из кэша значения всех прочитанных параметров данного конфига
@@ -288,12 +306,28 @@ public final class SysConfigFile implements SysPackable
         return file;
     }
 
-    // возвращает полный путь к config-файлу
+    // возвращает полный путь к существующему config-файлу с расширениями .config, .config.xml, .xml и без расширения
+    // если ни одного файла не существует, то возвращает путь с расширением .config
+    //
+    // можно модифицировать код, чтобы метод искал конфигурационный файл в разных директориях
+    // и возвращал первый существующий config-файл
+    //
     // внимание! класс серверный, поэтому пути вычисляются на сервере
-    public final FileName filePath()
+    public FileName filePath()
     {
+        Filename name;
+
         if( filePath == '' )
-            filePath = strfmt('%1%2.config', this.directory(), this.name());
+        {
+            name = strfmt('%1%2', this.directory(), this.name());
+
+            filePath = this.chooseExistOfFirstFile([
+                    name+'.config',
+                    name+'.config.xml',
+                    name+'.xml',
+                    name
+            ]);
+        }
 
         return filePath;
     }
@@ -435,6 +469,17 @@ public final class SysConfigFile implements SysPackable
         return owner;
     }
 
+    // возвращает true, файл существует
+    protected final boolean isFileExists(Filename path)
+    {
+        new InteropPermission(InteropKind::ClrInterop).assert();
+
+        if( System.IO.File::Exists(path) )
+            return true;
+
+        return false;
+    }
+
     // загрузить текст из файла, который размещен по указанному пути
     // возвращает загруженный из файла текст
     // возвращает пустую строку, если файл не удалось загрузить
@@ -442,10 +487,13 @@ public final class SysConfigFile implements SysPackable
     {
         TextBuffer  textBuffer;
         str         fileText;
-    ;
-        textBuffer = new TextBuffer();
+
+        if( !this.isFileExists(path) )
+            return fileText;
 
         new FileIOPermission(path, 'r').assert();
+
+        textBuffer = new TextBuffer();
 
         if( textBuffer.fromFile(path) )
             fileText = textBuffer.getText();

@@ -16,6 +16,42 @@ Formatversion: 1
     
     METHODS
       Version: 3
+      SOURCE #chooseExistOfFirstFile
+        #// принимает контейнер, содержащий полные имена файлов
+        #// перебирает имена и проверяет существует ли файл
+        #// возвращает первый существующий файл
+        #// если не существует ни одного файла, то возвращает первое имя
+        #protected Filename chooseExistOfFirstFile(container paths)
+        #{
+        #    Filename path;
+        #    int      len = conlen(paths);
+        #    int      i;
+        #
+        #    for( i=1; i<=len; i++ )
+        #    {
+        #        path = conpeek(paths, i);
+        #        if( this.isFileExists(path) )
+        #        {
+        #            return path;
+        #        }
+        #    }
+        #
+        #    path = conpeek(paths, 1);
+        #    return path;
+        #}
+      ENDSOURCE
+      SOURCE #isFileExists
+        #// возвращает true, файл существует
+        #protected final boolean isFileExists(Filename path)
+        #{
+        #    new InteropPermission(InteropKind::ClrInterop).assert();
+        #
+        #    if( System.IO.File::Exists(path) )
+        #        return true;
+        #
+        #    return false;
+        #}
+      ENDSOURCE
       SOURCE #checkExists
         #// возвращает true, если параметр присутствует в конфигурационном файле.
         #public final boolean checkExists(str paramName)
@@ -30,12 +66,7 @@ Formatversion: 1
         #// возвращает true, если config-файл существует
         #public final boolean checkFileExists()
         #{
-        #    new InteropPermission(InteropKind::ClrInterop).assert();
-        #
-        #    if( System.IO.File::Exists(this.filePath()) )
-        #        return true;
-        #
-        #    return false;
+        #    return this.isFileExists(this.filePath());
         #}
       ENDSOURCE
       SOURCE #checkFileValid
@@ -323,12 +354,28 @@ Formatversion: 1
         #}
       ENDSOURCE
       SOURCE #filePath
-        #// возвращает полный путь к config-файлу
+        #// возвращает полный путь к существующему config-файлу с расширениями .config, .config.xml, .xml и без расширения
+        #// если ни одного файла не существует, то возвращает путь с расширением .config
+        #//
+        #// можно модифицировать код, чтобы метод искал конфигурационный файл в разных директориях
+        #// и возвращал первый существующий config-файл
+        #//
         #// внимание! класс серверный, поэтому пути вычисляются на сервере
-        #public final FileName filePath()
+        #public FileName filePath()
         #{
+        #    Filename name;
+        #
         #    if( filePath == '' )
-        #        filePath = strfmt('%1%2.config', this.directory(), this.name());
+        #    {
+        #        name = strfmt('%1%2', this.directory(), this.name());
+        #
+        #        filePath = this.chooseExistOfFirstFile([
+        #                name+'.config',
+        #                name+'.config.xml',
+        #                name+'.xml',
+        #                name
+        #        ]);
+        #    }
         #
         #    return filePath;
         #}
@@ -484,10 +531,13 @@ Formatversion: 1
         #{
         #    TextBuffer  textBuffer;
         #    str         fileText;
-        #;
-        #    textBuffer = new TextBuffer();
+        #
+        #    if( !this.isFileExists(path) )
+        #        return fileText;
         #
         #    new FileIOPermission(path, 'r').assert();
+        #
+        #    textBuffer = new TextBuffer();
         #
         #    if( textBuffer.fromFile(path) )
         #        fileText = textBuffer.getText();
@@ -892,10 +942,93 @@ Formatversion: 1
     
     METHODS
       Version: 3
+      SOURCE #testFilePath_4
+        #void testFilePath_4()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #;
+        #    this.writeToFile(tempPath + configName + '.config');
+        #    this.writeToFile(tempPath + configName + '.config.xml');
+        #    this.writeToFile(tempPath + configName + '.xml');
+        #    this.writeToFile(tempPath + configName + '');
+        #
+        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
+      SOURCE #testFilePath_3
+        #void testFilePath_3()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #;
+        #    this.writeToFile(tempPath + configName + '.config');
+        #    this.writeToFile(tempPath + configName + '.config.xml');
+        #    this.writeToFile(tempPath + configName + '.xml');
+        #
+        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
+      SOURCE #testFilePath_2
+        #void testFilePath_2()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #;
+        #    this.writeToFile(tempPath + configName + '.config');
+        #    this.writeToFile(tempPath + configName + '.config.xml');
+        #
+        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
+      SOURCE #testFilePath_ConfigXml
+        #void testFilePath_ConfigXml()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #;
+        #    this.writeToFile(tempPath + configName + '.config.xml');
+        #
+        #    this.assertEquals(strfmt(@'%1%2.config.xml', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
+      SOURCE #testFilePath_Xml
+        #void testFilePath_Xml()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #;
+        #    this.writeToFile(tempPath + configName + '.xml'); // просто создаем файл
+        #
+        #    this.assertEquals(strfmt(@'%1%2.xml', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
+      SOURCE #testFilePath_EmptyExt
+        #void testFilePath_EmptyExt()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #;
+        #    this.writeToFile(tempPath + configName + ''); // просто создаем файл
+        #
+        #    this.assertEquals(strfmt(@'%1%2', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
+      SOURCE #testFilePath_Config
+        #void testFilePath_Config()
+        #{
+        #    str             configName  = funcname();
+        #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
+        #;
+        #    this.writeToFile(tempPath + configName + '.config'); // просто создаем файл
+        #
+        #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
+        #}
+      ENDSOURCE
       SOURCE #classDeclaration
         #//
         #// https://github.com/mazzy-ax/SysConfigFile
-        #// (с) 2019 mazzy, v2.0, MIT License
+        #// (с) 2019, 2021 mazzy, v2.1, MIT License
         #//
         #// класс всегда выполняется на сервере!! см в AOT-параметры класса
         #public class SysConfigFileTest extends SysTestCase
@@ -1406,6 +1539,8 @@ Formatversion: 1
         #    str             configName  = funcname();
         #    SysConfigFile   config      = new SysConfigFile(configName,tempPath).clearGlobalCache();
         #;
+        #    // нет никаких config-файлов
+        #
         #    this.assertEquals(strfmt(@'%1%2.config', tempPath, configName), config.filePath());
         #}
       ENDSOURCE
@@ -2550,7 +2685,7 @@ Formatversion: 1
         #}
       ENDSOURCE
       SOURCE #writeToFile
-        #protected void writeToFile(str filePath, str text)
+        #protected void writeToFile(str filePath, str text = '')
         #{
         #    #File
         #    TextBuffer textBuffer = new TextBuffer();
@@ -2631,14 +2766,14 @@ Formatversion: 1
     BEGINNODE
       FILETYPE 0
       UTILTYPE 45
-      UTILOBJECTID 50146
+      UTILOBJECTID 50015
       NODETYPE 329
       NAME #SysConfigFile
     ENDNODE
     BEGINNODE
       FILETYPE 0
       UTILTYPE 45
-      UTILOBJECTID 50147
+      UTILOBJECTID 50016
       NODETYPE 329
       NAME #SysConfigFileTest
     ENDNODE
